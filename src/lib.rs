@@ -7,8 +7,6 @@ pub mod table_read;
 pub mod test_utils;
 pub mod tsv;
 
-pub use duckdb;
-
 /// Time the enclosing scope from this point until the scope exits.
 /// Compiles to nothing when the `profiling` feature is disabled.
 #[macro_export]

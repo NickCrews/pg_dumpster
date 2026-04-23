@@ -13,7 +13,6 @@ arrow = "58"
 clap = { version = "4.6.0", features = ["derive"] }
 crossbeam-channel = "0.5.15"
 csv = "1.4.0"
-duckdb = { version = "1.10501.0", features = ["bundled"] }
 parquet = { version = "58", features = ["arrow", "snap"] }
 flate2 = "1.1.9"
 glob = "0.3.3"

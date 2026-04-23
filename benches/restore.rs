@@ -19,7 +19,6 @@ fn bench_case(c: &mut Criterion, case: TestCase) {
         table_name: "disclosure.fec_fitem_sched_a_1975_1976".to_string(),
         output: Some(out_path),
         format: table_read::Format::Csv,
-        engine: table_read::Engine::Arrow,
     };
 
     group.bench_function(case.name.clone(), |b| {

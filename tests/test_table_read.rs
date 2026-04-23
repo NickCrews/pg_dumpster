@@ -15,7 +15,6 @@ fn run_test(name: &str) -> Result<()> {
         table_name: "disclosure.fec_fitem_sched_a_1975_1976".to_string(),
         output: Some(out_path),
         format: table_read::Format::Csv,
-        engine: table_read::Engine::Arrow,
     };
     table_read::read_table(test_case.src_dump().to_str().unwrap(), opts)?;
     Ok(())
@@ -32,7 +31,6 @@ fn escaping_preserves_copy_escapes_in_tsv_raw() -> Result<()> {
         table_name: "escaping.values".to_string(),
         output: Some(out_path.clone()),
         format: table_read::Format::TsvRaw,
-        engine: table_read::Engine::Arrow,
     };
     table_read::read_table(test_case.src_dump().to_str().unwrap(), opts)?;
 

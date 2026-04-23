@@ -2,7 +2,7 @@ use crate::arrow_tsv::{DEFAULT_BATCH_SIZE, TsvBatchReader};
 use crate::entries::find_table_entry;
 use crate::reader::{DumpReader, open_reader};
 use crate::tsv::{TsvStream, parse_copy_statement};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::ValueEnum;
 use parquet::arrow::ArrowWriter;
 use parquet::basic::Compression;
@@ -10,7 +10,6 @@ use parquet::file::properties::WriterProperties;
 use std::fs::{self, create_dir_all};
 use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command as ProcessCommand, Stdio};
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ReadTableOptions {
@@ -20,22 +19,6 @@ pub struct ReadTableOptions {
     pub output: Option<PathBuf>,
     /// The format of the output.
     pub format: Format,
-    /// Conversion engine (for CSV/Parquet/JSON formats).
-    pub engine: Engine,
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
-pub enum Engine {
-    /// Use an in-process arrow-rs + parquet-rs pipeline (fast path).
-    Arrow,
-    /// Pipe TSV data to a `duckdb` subprocess and have it produce the output (legacy path).
-    Duckdb,
-}
-
-impl Default for Engine {
-    fn default() -> Self {
-        Engine::Arrow
-    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
@@ -51,8 +34,6 @@ pub enum Format {
     TsvRaw,
     /// Standard CSV with proper quoting, NULLs as empty strings, and escaped special characters.
     Csv,
-    /// Newline-delimited JSON, one object per row.
-    Json,
 }
 
 impl Default for Format {
@@ -66,7 +47,6 @@ pub fn read_table(dump_path: &str, opts: ReadTableOptions) -> Result<()> {
         table_name,
         output,
         format,
-        engine,
         ..
     } = opts;
     let mut loader = open_reader(dump_path).context("Failed to open dump and read TOC")?;
@@ -74,224 +54,171 @@ pub fn read_table(dump_path: &str, opts: ReadTableOptions) -> Result<()> {
     let mut tsv_stream = TsvStream::new(&mut loader, &entry)
         .with_context(|| format!("failed to create TSV stream for {table_name}"))?;
 
-    if format == Format::TsvRaw {
-        let mut out: Box<dyn io::Write> = if let Some(output_path) = output {
-            Box::new(
-                fs::File::create(&output_path)
-                    .with_context(|| format!("failed to create output file {:?}", output_path))?,
-            )
-        } else {
-            Box::new(io::stdout())
-        };
-        let mut progress: ProgressReader<
-            &mut TsvStream<libpgdump::format::custom::TableDataReader<'_, DumpReader>>,
-        > = ProgressReader::new(&mut tsv_stream, table_name.to_string());
-        eprintln!("[{table_name}] starting stream (format: tsv-raw)");
-        let rows = io::copy(&mut progress, &mut out)
-            .with_context(|| format!("failed to stream data for {table_name}"))?;
-        eprintln!("[{table_name}] done ({} bytes written)", rows);
-        return Ok(());
-    }
+    match format {
+        Format::TsvRaw => {
+            let mut out: Box<dyn io::Write> =
+                if let Some(output_path) = output {
+                    Box::new(fs::File::create(&output_path).with_context(|| {
+                        format!("failed to create output file {:?}", output_path)
+                    })?)
+                } else {
+                    Box::new(io::stdout())
+                };
+            let mut progress: ProgressReader<
+                &mut TsvStream<libpgdump::format::custom::TableDataReader<'_, DumpReader>>,
+            > = ProgressReader::new(&mut tsv_stream, table_name.to_string());
+            eprintln!("[{table_name}] starting stream (format: tsv-raw)");
+            let rows = io::copy(&mut progress, &mut out)
+                .with_context(|| format!("failed to stream data for {table_name}"))?;
+            eprintln!("[{table_name}] done ({} bytes written)", rows);
+            return Ok(());
+        }
+        Format::Csv => {
+            let output_path =
+                output.ok_or_else(|| anyhow::anyhow!("--output is required for csv format"))?;
+            create_dir_all(output_path.parent().unwrap_or_else(|| Path::new("."))).with_context(
+                || {
+                    format!(
+                        "failed to create parent directories for output file {:?}",
+                        output_path
+                    )
+                },
+            )?;
+            let column_names = entry
+                .copy_stmt
+                .as_deref()
+                .and_then(|s| parse_copy_statement(s).ok().flatten())
+                .map(|(_, cols)| cols)
+                .ok_or_else(|| anyhow::anyhow!("no column names parsed from COPY statement"))?;
+            eprintln!(
+                "[{table_name}] starting arrow csv write ({} cols, output: {:?})",
+                column_names.len(),
+                output_path
+            );
 
-    if format == Format::Csv && engine == Engine::Arrow {
-        let output_path =
-            output.ok_or_else(|| anyhow::anyhow!("--output is required for csv format"))?;
-        create_dir_all(output_path.parent().unwrap_or_else(|| Path::new("."))).with_context(
-            || {
-                format!(
-                    "failed to create parent directories for output file {:?}",
-                    output_path
-                )
-            },
-        )?;
-        let column_names = entry
-            .copy_stmt
-            .as_deref()
-            .and_then(|s| parse_copy_statement(s).ok().flatten())
-            .map(|(_, cols)| cols)
-            .ok_or_else(|| anyhow::anyhow!("no column names parsed from COPY statement"))?;
-        eprintln!(
-            "[{table_name}] starting arrow csv write ({} cols, output: {:?})",
-            column_names.len(),
-            output_path
-        );
+            let mut buf_reader = BufReader::with_capacity(1 << 17, tsv_stream);
+            let mut header_line = Vec::new();
+            buf_reader
+                .read_until(b'\n', &mut header_line)
+                .with_context(|| "failed to read header line")?;
 
-        let mut buf_reader = BufReader::with_capacity(1 << 17, tsv_stream);
-        let mut header_line = Vec::new();
-        buf_reader
-            .read_until(b'\n', &mut header_line)
-            .with_context(|| "failed to read header line")?;
+            let file = fs::File::create(&output_path)
+                .with_context(|| format!("failed to create output file {:?}", output_path))?;
+            let buf_file = io::BufWriter::with_capacity(1 << 20, file);
 
-        let file = fs::File::create(&output_path)
-            .with_context(|| format!("failed to create output file {:?}", output_path))?;
-        let buf_file = io::BufWriter::with_capacity(1 << 20, file);
+            let mut batch_reader =
+                TsvBatchReader::new(buf_reader, &column_names, DEFAULT_BATCH_SIZE);
 
-        let mut batch_reader = TsvBatchReader::new(buf_reader, &column_names, DEFAULT_BATCH_SIZE);
+            let (tx, rx) = crossbeam_channel::bounded::<arrow::record_batch::RecordBatch>(4);
+            let table_name_owned = table_name.to_string();
+            let writer_handle = std::thread::spawn(move || -> Result<u64> {
+                let mut writer = arrow::csv::WriterBuilder::new()
+                    .with_header(true)
+                    .build(buf_file);
+                let mut total_rows = 0u64;
+                let mut last_logged = 0u64;
+                for batch in rx.iter() {
+                    total_rows += batch.num_rows() as u64;
+                    writer.write(&batch).context("failed to write csv batch")?;
+                    if total_rows - last_logged >= 1_000_000 {
+                        eprintln!("[{table_name_owned}] {} rows written", total_rows);
+                        last_logged = total_rows;
+                    }
+                }
+                Ok(total_rows)
+            });
 
-        let (tx, rx) = crossbeam_channel::bounded::<arrow::record_batch::RecordBatch>(4);
-        let table_name_owned = table_name.to_string();
-        let writer_handle = std::thread::spawn(move || -> Result<u64> {
-            let mut writer = arrow::csv::WriterBuilder::new()
-                .with_header(true)
-                .build(buf_file);
-            let mut total_rows = 0u64;
-            let mut last_logged = 0u64;
-            for batch in rx.iter() {
-                total_rows += batch.num_rows() as u64;
-                writer.write(&batch).context("failed to write csv batch")?;
-                if total_rows - last_logged >= 1_000_000 {
-                    eprintln!("[{table_name_owned}] {} rows written", total_rows);
-                    last_logged = total_rows;
+            while let Some(batch) = batch_reader.next_batch()? {
+                if tx.send(batch).is_err() {
+                    break;
                 }
             }
-            Ok(total_rows)
-        });
+            drop(tx);
 
-        while let Some(batch) = batch_reader.next_batch()? {
-            if tx.send(batch).is_err() {
-                break;
-            }
+            let total_rows = writer_handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("writer thread panicked"))??;
+
+            eprintln!("[{table_name}] done ({} rows)", total_rows);
+            return Ok(());
         }
-        drop(tx);
+        Format::Parquet => {
+            let output_path =
+                output.ok_or_else(|| anyhow::anyhow!("--output is required for parquet format"))?;
+            create_dir_all(output_path.parent().unwrap_or_else(|| Path::new("."))).with_context(
+                || {
+                    format!(
+                        "failed to create parent directories for output file {:?}",
+                        output_path
+                    )
+                },
+            )?;
+            let column_names = entry
+                .copy_stmt
+                .as_deref()
+                .and_then(|s| parse_copy_statement(s).ok().flatten())
+                .map(|(_, cols)| cols)
+                .ok_or_else(|| anyhow::anyhow!("no column names parsed from COPY statement"))?;
+            eprintln!(
+                "[{table_name}] starting arrow parquet write ({} cols, output: {:?})",
+                column_names.len(),
+                output_path
+            );
 
-        let total_rows = writer_handle
-            .join()
-            .map_err(|_| anyhow::anyhow!("writer thread panicked"))??;
+            let mut buf_reader = BufReader::with_capacity(1 << 17, tsv_stream);
+            let mut header_line = Vec::new();
+            buf_reader
+                .read_until(b'\n', &mut header_line)
+                .with_context(|| "failed to read header line")?;
 
-        eprintln!("[{table_name}] done ({} rows)", total_rows);
-        return Ok(());
-    }
+            let file = fs::File::create(&output_path)
+                .with_context(|| format!("failed to create output file {:?}", output_path))?;
+            let buf_file = io::BufWriter::with_capacity(1 << 20, file);
 
-    if format == Format::Parquet && engine == Engine::Arrow {
-        let output_path =
-            output.ok_or_else(|| anyhow::anyhow!("--output is required for parquet format"))?;
-        create_dir_all(output_path.parent().unwrap_or_else(|| Path::new("."))).with_context(
-            || {
-                format!(
-                    "failed to create parent directories for output file {:?}",
-                    output_path
-                )
-            },
-        )?;
-        let column_names = entry
-            .copy_stmt
-            .as_deref()
-            .and_then(|s| parse_copy_statement(s).ok().flatten())
-            .map(|(_, cols)| cols)
-            .ok_or_else(|| anyhow::anyhow!("no column names parsed from COPY statement"))?;
-        eprintln!(
-            "[{table_name}] starting arrow parquet write ({} cols, output: {:?})",
-            column_names.len(),
-            output_path
-        );
+            let mut batch_reader =
+                TsvBatchReader::new(buf_reader, &column_names, DEFAULT_BATCH_SIZE);
+            let schema = batch_reader.schema();
+            let props = WriterProperties::builder()
+                .set_compression(Compression::SNAPPY)
+                .build();
+            let writer = ArrowWriter::try_new(buf_file, schema, Some(props))
+                .context("failed to create parquet writer")?;
 
-        let mut buf_reader = BufReader::with_capacity(1 << 17, tsv_stream);
-        let mut header_line = Vec::new();
-        buf_reader
-            .read_until(b'\n', &mut header_line)
-            .with_context(|| "failed to read header line")?;
+            let (tx, rx) = crossbeam_channel::bounded::<arrow::record_batch::RecordBatch>(4);
+            let table_name_owned = table_name.to_string();
+            let writer_handle = std::thread::spawn(move || -> Result<u64> {
+                let mut writer = writer;
+                let mut total_rows = 0u64;
+                let mut last_logged = 0u64;
+                for batch in rx.iter() {
+                    total_rows += batch.num_rows() as u64;
+                    writer
+                        .write(&batch)
+                        .context("failed to write parquet batch")?;
+                    if total_rows - last_logged >= 1_000_000 {
+                        eprintln!("[{table_name_owned}] {} rows written", total_rows);
+                        last_logged = total_rows;
+                    }
+                }
+                writer.close().context("failed to close parquet writer")?;
+                Ok(total_rows)
+            });
 
-        let file = fs::File::create(&output_path)
-            .with_context(|| format!("failed to create output file {:?}", output_path))?;
-        let buf_file = io::BufWriter::with_capacity(1 << 20, file);
-
-        let mut batch_reader = TsvBatchReader::new(buf_reader, &column_names, DEFAULT_BATCH_SIZE);
-        let schema = batch_reader.schema();
-        let props = WriterProperties::builder()
-            .set_compression(Compression::SNAPPY)
-            .build();
-        let writer = ArrowWriter::try_new(buf_file, schema, Some(props))
-            .context("failed to create parquet writer")?;
-
-        let (tx, rx) = crossbeam_channel::bounded::<arrow::record_batch::RecordBatch>(4);
-        let table_name_owned = table_name.to_string();
-        let writer_handle = std::thread::spawn(move || -> Result<u64> {
-            let mut writer = writer;
-            let mut total_rows = 0u64;
-            let mut last_logged = 0u64;
-            for batch in rx.iter() {
-                total_rows += batch.num_rows() as u64;
-                writer
-                    .write(&batch)
-                    .context("failed to write parquet batch")?;
-                if total_rows - last_logged >= 1_000_000 {
-                    eprintln!("[{table_name_owned}] {} rows written", total_rows);
-                    last_logged = total_rows;
+            while let Some(batch) = batch_reader.next_batch()? {
+                if tx.send(batch).is_err() {
+                    break;
                 }
             }
-            writer.close().context("failed to close parquet writer")?;
-            Ok(total_rows)
-        });
+            drop(tx);
 
-        while let Some(batch) = batch_reader.next_batch()? {
-            if tx.send(batch).is_err() {
-                break;
-            }
+            let total_rows = writer_handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("writer thread panicked"))??;
+
+            eprintln!("[{table_name}] done ({} rows)", total_rows);
+            return Ok(());
         }
-        drop(tx);
-
-        let total_rows = writer_handle
-            .join()
-            .map_err(|_| anyhow::anyhow!("writer thread panicked"))??;
-
-        eprintln!("[{table_name}] done ({} rows)", total_rows);
-        return Ok(());
     }
-
-    let fmt_str = match format {
-        Format::Csv => "CSV",
-        Format::Parquet => "PARQUET",
-        Format::Json => "JSON",
-        Format::TsvRaw => unreachable!(),
-    };
-
-    let out_path_str = match output {
-        Some(p) => {
-            create_dir_all(p.parent().unwrap_or_else(|| Path::new("."))).with_context(|| {
-                format!(
-                    "failed to create parent directories for output file {:?}",
-                    p
-                )
-            })?;
-            p.to_string_lossy().into_owned()
-        }
-        None => "/dev/stdout".to_owned(),
-    };
-
-    let sql = format!(
-        "SET enable_progress_bar = false; SET preserve_insertion_order = false; COPY (SELECT * FROM read_csv('/dev/stdin', quote='', delim='\\t', escape='', new_line='\\n', nullstr='\\N', header=true, all_varchar=true)) TO '{}' (FORMAT {})",
-        out_path_str.replace('\'', "''"),
-        fmt_str,
-    );
-
-    eprintln!("[{table_name}] starting stream (format: {fmt_str}, output: {out_path_str})");
-
-    let mut child = ProcessCommand::new("duckdb")
-        .args(["-batch", "-c", &sql])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .context("failed to spawn duckdb process")?;
-
-    let mut child_stdin = child.stdin.take().context("failed to get duckdb stdin")?;
-
-    let mut progress = ProgressReader::new(&mut tsv_stream, table_name.to_string());
-    io::copy(&mut progress, &mut child_stdin)
-        .with_context(|| format!("failed to pipe TSV data to duckdb for {table_name}"))?;
-    eprintln!(
-        "[{table_name}] {} rows streamed to duckdb, waiting for conversion to finish...",
-        progress.row_count
-    );
-    drop(child_stdin);
-
-    let status = child.wait().context("failed to wait for duckdb")?;
-    if !status.success() {
-        bail!("duckdb exited with {}", status);
-    }
-    eprintln!("[{table_name}] done");
-
-    Ok(())
 }
 
 struct ProgressReader<R> {

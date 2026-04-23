@@ -5,7 +5,7 @@ use libpgdump::OffsetState;
 use libpgdump::TableOfContents;
 use pg_dumpster::entries::filter_entries_to_table_datas;
 use pg_dumpster::reader::open_reader;
-use pg_dumpster::table_read::{Engine, Format, ReadTableOptions, read_table};
+use pg_dumpster::table_read::{Format, ReadTableOptions, read_table};
 use pg_dumpster::tsv::{TsvStream, parse_copy_statement};
 use std::fs::{self};
 use std::io::{self};
@@ -56,9 +56,6 @@ enum TableCommand {
         /// The format of the output.
         #[arg(long, default_value = "tsv-raw")]
         format: Format,
-        /// Conversion engine (for CSV/Parquet/JSON formats).
-        #[arg(long, default_value = "arrow")]
-        engine: Engine,
     },
 }
 
@@ -77,13 +74,11 @@ fn main() -> Result<()> {
             table_name,
             output,
             format,
-            engine,
         }) => {
             let opts = ReadTableOptions {
                 table_name,
                 output,
                 format,
-                engine,
             };
             read_table(&dump_path, opts)
         }
