@@ -4,18 +4,17 @@
 
 format := "parquet"
 engine := "arrow"
+table := "disclosure.fec_fitem_sched_a_1975_1976"
 
 profile CASE:
     #!/bin/bash
     SRC_DUMP=$(just dump_of_case {{CASE}})
-    DUCKDB_PATH=fixtures/{{CASE}}/profiled.gen.duckdb
+    OUT_PATH=fixtures/{{CASE}}/profile_gen/out.{{format}}
     PROFILE_PATH=fixtures/{{CASE}}/profile.gen.json.gz
-    rm -f $DUCKDB_PATH
     cargo build --profile profiling --features profiling
     # dsymutil collects DWARF from object files into a .dSYM bundle that samply needs for symbolication
     dsymutil ./target/profiling/pg_dumpster
-    duckdb -f fec_schema.sql $DUCKDB_PATH
-    samply record --output $PROFILE_PATH ./target/profiling/pg_dumpster table read $SRC_DUMP --engine {{engine}} --format {{format}}
+    samply record --output $PROFILE_PATH ./target/profiling/pg_dumpster table read $SRC_DUMP {{table}} --engine {{engine}} --format {{format}} --output $OUT_PATH
 
 profile_load CASE:
     #!/bin/bash
