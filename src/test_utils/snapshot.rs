@@ -54,7 +54,7 @@ impl Snapshot {
 
         if !self.path.exists() {
             write_snapshot(&self.path, &actual, &self.id_column, self.format)?;
-            panic!(
+            bail!(
                 "snapshot created at {} — review its contents and commit it. \
                  Subsequent runs will verify against it. \
                  Set {}=1 to regenerate.",
@@ -70,7 +70,7 @@ impl Snapshot {
         if diffs.is_empty() {
             return Ok(());
         }
-        panic!("{}", format_diffs(&self.path, &diffs));
+        bail!("{}", format_diffs(&self.path, &diffs));
     }
 }
 
