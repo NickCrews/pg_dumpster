@@ -1,0 +1,8 @@
+id	payload
+backslash	path\\to\\file
+carriage-return	first\rsecond
+newline	line1\nline2
+null	\N
+plain	hello world
+tab	a\tb\tc
+unicode	café — 日本語

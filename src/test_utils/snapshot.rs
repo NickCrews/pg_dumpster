@@ -14,14 +14,25 @@ const DEFAULT_ID_COLUMN: &str = "id";
 pub struct Snapshot {
     path: PathBuf,
     id_column: String,
+    format: Format,
 }
 
 impl Snapshot {
     pub fn new(test_case: &TestCase, name: &str) -> Self {
-        let path = test_case.dir.join("snapshots").join(format!("{name}.csv"));
+        let path = test_case.dir.join("snapshots").join(name);
+        let format = if name.ends_with(".csv") {
+            Format::Csv
+        } else if name.ends_with(".parquet") {
+            Format::Parquet
+        } else if name.ends_with(".tsv") {
+            Format::TsvRaw
+        } else {
+            panic!("cannot infer snapshot format from name: {}", name);
+        };
         Self {
             path,
             id_column: DEFAULT_ID_COLUMN.to_string(),
+            format,
         }
     }
 
@@ -36,13 +47,13 @@ impl Snapshot {
         })?;
 
         if update_mode_enabled() {
-            write_snapshot(&self.path, &actual, &self.id_column)?;
+            write_snapshot(&self.path, &actual, &self.id_column, self.format)?;
             eprintln!("[snapshot] updated {}", self.path.display());
             return Ok(());
         }
 
         if !self.path.exists() {
-            write_snapshot(&self.path, &actual, &self.id_column)?;
+            write_snapshot(&self.path, &actual, &self.id_column, self.format)?;
             panic!(
                 "snapshot created at {} — review its contents and commit it. \
                  Subsequent runs will verify against it. \
@@ -52,7 +63,7 @@ impl Snapshot {
             );
         }
 
-        let expected = read_csv(&self.path)
+        let expected = read_actual(&self.path, self.format)
             .with_context(|| format!("failed to read snapshot at {}", self.path.display()))?;
 
         let diffs = compare(&expected, &actual, &self.id_column);
@@ -85,17 +96,16 @@ impl Table {
 
 fn read_actual(path: &Path, format: Format) -> Result<Table> {
     match format {
-        Format::Csv => read_csv(path),
+        Format::Csv => read_tabular(path, b','),
         Format::Parquet => read_parquet(path),
-        Format::TsvRaw => {
-            bail!("Format::TsvRaw is not supported by the snapshot system")
-        }
+        Format::TsvRaw => read_tabular(path, b'\t'),
     }
 }
 
-fn read_csv(path: &Path) -> Result<Table> {
+fn read_tabular(path: &Path, delimiter: u8) -> Result<Table> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
+        .delimiter(delimiter)
         .from_path(path)
         .with_context(|| format!("failed to open CSV at {}", path.display()))?;
     let columns: Vec<String> = reader
@@ -389,7 +399,13 @@ fn fmt_opt(v: &Option<String>) -> String {
     }
 }
 
-fn write_snapshot(path: &Path, table: &Table, id_column: &str) -> Result<()> {
+fn write_snapshot(path: &Path, table: &Table, id_column: &str, format: Format) -> Result<()> {
+    let delimiter = match format {
+        Format::Csv => b',',
+        Format::TsvRaw => b'\t',
+        Format::Parquet => panic!("writing parquet snapshots is not supported yet"),
+    };
+
     let id_idx = table.column_index(id_column).ok_or_else(|| {
         anyhow::anyhow!(
             "cannot write snapshot: id column '{}' not found in columns {:?}",
@@ -411,6 +427,7 @@ fn write_snapshot(path: &Path, table: &Table, id_column: &str) -> Result<()> {
     }
 
     let mut writer = csv::WriterBuilder::new()
+        .delimiter(delimiter)
         .from_path(path)
         .with_context(|| format!("failed to open snapshot for writing: {}", path.display()))?;
     writer
