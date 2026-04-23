@@ -148,9 +148,11 @@ fn is_stale(out: &Path, inputs: &[&Path]) -> bool {
         Ok(t) => t,
         Err(_) => return true,
     };
-    inputs.iter().any(|input| match fs::metadata(input).and_then(|m| m.modified()) {
-        Ok(input_mtime) => input_mtime > out_mtime,
-        // If we can't stat an input, be conservative and regenerate.
-        Err(_) => true,
-    })
+    inputs.iter().any(
+        |input| match fs::metadata(input).and_then(|m| m.modified()) {
+            Ok(input_mtime) => input_mtime > out_mtime,
+            // If we can't stat an input, be conservative and regenerate.
+            Err(_) => true,
+        },
+    )
 }

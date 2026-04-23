@@ -1,0 +1,9 @@
+id,payload
+backslash,path\to\file
+carriage-return,"firstsecond"
+newline,"line1
+line2"
+null,
+plain,hello world
+tab,a	b	c
+unicode,café — 日本語
