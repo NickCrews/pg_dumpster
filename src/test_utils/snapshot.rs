@@ -84,7 +84,7 @@ fn update_mode_enabled() -> bool {
 struct Table {
     columns: Vec<String>,
     /// One entry per row. Each inner vec has exactly `columns.len()` entries.
-    /// `None` represents a NULL / empty-string value (CSV cannot distinguish).
+    /// `None` is a SQL NULL, `Some("")` is a literal empty string.
     rows: Vec<Vec<Option<String>>>,
 }
 
@@ -96,45 +96,140 @@ impl Table {
 
 fn read_actual(path: &Path, format: Format) -> Result<Table> {
     match format {
-        Format::Csv => read_tabular(path, b','),
+        Format::Csv => read_csv(path),
         Format::Parquet => read_parquet(path),
-        Format::TsvRaw => read_tabular(path, b'\t'),
+        Format::TsvRaw => read_tsv_raw(path),
     }
 }
 
-fn read_tabular(path: &Path, delimiter: u8) -> Result<Table> {
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(true)
-        .delimiter(delimiter)
-        .from_path(path)
-        .with_context(|| format!("failed to open CSV at {}", path.display()))?;
-    let columns: Vec<String> = reader
-        .headers()
-        .context("failed to read CSV header")?
-        .iter()
-        .map(|s| s.to_string())
+/// Parse a CSV file, distinguishing quoted empty fields (`""`, → `Some("")`)
+/// from unquoted empty fields (→ `None`, treated as SQL NULL). This is
+/// essential for validating that our CSV writer preserves null vs empty
+/// string, which tools like DuckDB rely on.
+fn read_csv(path: &Path) -> Result<Table> {
+    let bytes = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
+    let text = std::str::from_utf8(&bytes)
+        .with_context(|| format!("CSV at {} is not valid UTF-8", path.display()))?;
+    let mut all = parse_csv(text)
+        .with_context(|| format!("failed to parse CSV at {}", path.display()))?;
+    if all.is_empty() {
+        bail!("CSV at {} is empty", path.display());
+    }
+    let header = all.remove(0);
+    let columns: Vec<String> = header
+        .into_iter()
+        .map(|f| f.unwrap_or_default())
         .collect();
-    let mut rows = Vec::new();
-    for (i, result) in reader.records().enumerate() {
-        let record = result.with_context(|| format!("failed to read CSV record {i}"))?;
-        if record.len() != columns.len() {
+    for (i, row) in all.iter().enumerate() {
+        if row.len() != columns.len() {
             bail!(
                 "CSV row {} has {} fields but header has {}",
                 i,
-                record.len(),
+                row.len(),
                 columns.len(),
             );
         }
-        let row: Vec<Option<String>> = record
-            .iter()
-            .map(|s| {
-                if s.is_empty() {
-                    None
+    }
+    Ok(Table { columns, rows: all })
+}
+
+fn parse_csv(text: &str) -> Result<Vec<Vec<Option<String>>>> {
+    let mut rows: Vec<Vec<Option<String>>> = Vec::new();
+    let mut row: Vec<Option<String>> = Vec::new();
+    let mut field = String::new();
+    let mut in_quotes = false;
+    let mut was_quoted = false;
+
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if in_quotes {
+            if c == '"' {
+                if chars.peek() == Some(&'"') {
+                    chars.next();
+                    field.push('"');
                 } else {
-                    Some(s.to_string())
+                    in_quotes = false;
                 }
-            })
+            } else {
+                field.push(c);
+            }
+            continue;
+        }
+        match c {
+            ',' => {
+                let val = if was_quoted || !field.is_empty() {
+                    Some(std::mem::take(&mut field))
+                } else {
+                    None
+                };
+                row.push(val);
+                was_quoted = false;
+            }
+            '\r' | '\n' => {
+                if c == '\r' && chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                if was_quoted || !field.is_empty() || !row.is_empty() {
+                    let val = if was_quoted || !field.is_empty() {
+                        Some(std::mem::take(&mut field))
+                    } else {
+                        None
+                    };
+                    row.push(val);
+                    rows.push(std::mem::take(&mut row));
+                }
+                was_quoted = false;
+            }
+            '"' if field.is_empty() && !was_quoted => {
+                in_quotes = true;
+                was_quoted = true;
+            }
+            _ => field.push(c),
+        }
+    }
+    if in_quotes {
+        bail!("unterminated quoted field at end of CSV");
+    }
+    if was_quoted || !field.is_empty() || !row.is_empty() {
+        let val = if was_quoted || !field.is_empty() {
+            Some(field)
+        } else {
+            None
+        };
+        row.push(val);
+        rows.push(row);
+    }
+    Ok(rows)
+}
+
+/// Read a raw-postgres-COPY TSV, where `\N` is the null marker and all other
+/// fields are literal text (with `\n`, `\t`, `\\`, etc. as two-char
+/// sequences left as-is — we do not attempt to unescape them, just round-trip).
+fn read_tsv_raw(path: &Path) -> Result<Table> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("failed to read TSV at {}", path.display()))?;
+    let mut lines = text.split('\n');
+    let header_line = lines
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("TSV at {} is empty", path.display()))?;
+    let columns: Vec<String> = header_line.split('\t').map(|s| s.to_string()).collect();
+    let mut rows = Vec::new();
+    for (i, line) in lines.enumerate() {
+        if line.is_empty() {
+            continue;
+        }
+        let row: Vec<Option<String>> = line
+            .split('\t')
+            .map(|s| if s == "\\N" { None } else { Some(s.to_string()) })
             .collect();
+        if row.len() != columns.len() {
+            bail!(
+                "TSV row {} has {} fields but header has {}",
+                i,
+                row.len(),
+                columns.len(),
+            );
+        }
         rows.push(row);
     }
     Ok(Table { columns, rows })
@@ -181,12 +276,7 @@ fn read_parquet(path: &Path) -> Result<Table> {
                     if col.is_null(r) {
                         None
                     } else {
-                        let v = col.value(r);
-                        if v.is_empty() {
-                            None
-                        } else {
-                            Some(v.to_string())
-                        }
+                        Some(col.value(r).to_string())
                     }
                 })
                 .collect();
@@ -400,12 +490,6 @@ fn fmt_opt(v: &Option<String>) -> String {
 }
 
 fn write_snapshot(path: &Path, table: &Table, id_column: &str, format: Format) -> Result<()> {
-    let delimiter = match format {
-        Format::Csv => b',',
-        Format::TsvRaw => b'\t',
-        Format::Parquet => panic!("writing parquet snapshots is not supported yet"),
-    };
-
     let id_idx = table.column_index(id_column).ok_or_else(|| {
         anyhow::anyhow!(
             "cannot write snapshot: id column '{}' not found in columns {:?}",
@@ -426,20 +510,92 @@ fn write_snapshot(path: &Path, table: &Table, id_column: &str, format: Format) -
             .with_context(|| format!("failed to create snapshot directory {}", parent.display()))?;
     }
 
-    let mut writer = csv::WriterBuilder::new()
-        .delimiter(delimiter)
-        .from_path(path)
+    let mut file = fs::File::create(path)
         .with_context(|| format!("failed to open snapshot for writing: {}", path.display()))?;
-    writer
-        .write_record(&table.columns)
-        .context("failed to write snapshot header")?;
-    for i in indices {
-        let row = &table.rows[i];
-        let record: Vec<&str> = row.iter().map(|v| v.as_deref().unwrap_or("")).collect();
-        writer
-            .write_record(&record)
-            .context("failed to write snapshot row")?;
+    match format {
+        Format::Csv => write_csv_snapshot(&mut file, table, &indices)?,
+        Format::TsvRaw => write_tsv_snapshot(&mut file, table, &indices)?,
+        Format::Parquet => panic!("writing parquet snapshots is not supported yet"),
     }
-    writer.flush().context("failed to flush snapshot writer")?;
+    Ok(())
+}
+
+fn write_csv_snapshot(
+    out: &mut impl std::io::Write,
+    table: &Table,
+    indices: &[usize],
+) -> Result<()> {
+    write_csv_line(
+        out,
+        table.columns.iter().map(|c| Some(c.as_str())),
+    )?;
+    for &i in indices {
+        write_csv_line(out, table.rows[i].iter().map(|v| v.as_deref()))?;
+    }
+    Ok(())
+}
+
+fn write_csv_line<'a, I: Iterator<Item = Option<&'a str>>>(
+    out: &mut impl std::io::Write,
+    fields: I,
+) -> Result<()> {
+    let mut first = true;
+    for f in fields {
+        if !first {
+            out.write_all(b",")?;
+        }
+        first = false;
+        if let Some(s) = f {
+            write_csv_field(out, s)?;
+        }
+    }
+    out.write_all(b"\n")?;
+    Ok(())
+}
+
+fn write_csv_field(out: &mut impl std::io::Write, s: &str) -> Result<()> {
+    let needs_quoting = s.is_empty()
+        || s.bytes().any(|b| matches!(b, b'"' | b',' | b'\n' | b'\r'));
+    if !needs_quoting {
+        out.write_all(s.as_bytes())?;
+        return Ok(());
+    }
+    out.write_all(b"\"")?;
+    let bytes = s.as_bytes();
+    let mut last = 0;
+    for (i, b) in bytes.iter().enumerate() {
+        if *b == b'"' {
+            out.write_all(&bytes[last..=i])?;
+            out.write_all(b"\"")?;
+            last = i + 1;
+        }
+    }
+    out.write_all(&bytes[last..])?;
+    out.write_all(b"\"")?;
+    Ok(())
+}
+
+fn write_tsv_snapshot(
+    out: &mut impl std::io::Write,
+    table: &Table,
+    indices: &[usize],
+) -> Result<()> {
+    out.write_all(table.columns.join("\t").as_bytes())?;
+    out.write_all(b"\n")?;
+    for &i in indices {
+        let row = &table.rows[i];
+        let mut first = true;
+        for v in row {
+            if !first {
+                out.write_all(b"\t")?;
+            }
+            first = false;
+            match v {
+                None => out.write_all(b"\\N")?,
+                Some(s) => out.write_all(s.as_bytes())?,
+            }
+        }
+        out.write_all(b"\n")?;
+    }
     Ok(())
 }
