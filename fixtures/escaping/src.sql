@@ -13,6 +13,7 @@ CREATE TABLE escaping.values (
 COPY escaping.values (id, payload) FROM stdin;
 backslash	path\\to\\file
 carriage-return	first\rsecond
+empty-string	
 newline	line1\nline2
 null	\N
 plain	hello world

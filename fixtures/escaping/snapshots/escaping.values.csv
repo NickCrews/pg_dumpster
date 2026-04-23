@@ -1,6 +1,7 @@
 id,payload
 backslash,path\to\file
 carriage-return,"firstsecond"
+empty-string,""
 newline,"line1
 line2"
 null,
