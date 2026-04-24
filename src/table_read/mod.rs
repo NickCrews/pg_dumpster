@@ -92,13 +92,14 @@ pub fn read_entry(
 
     match format {
         Format::TsvRaw => {
-            let mut out: Box<dyn io::Write> = if let Some(output_path) = output {
-                Box::new(fs::File::create(&output_path).with_context(|| {
-                    format!("failed to create output file {:?}", output_path)
-                })?)
-            } else {
-                Box::new(io::stdout())
-            };
+            let mut out: Box<dyn io::Write> =
+                if let Some(output_path) = output {
+                    Box::new(fs::File::create(&output_path).with_context(|| {
+                        format!("failed to create output file {:?}", output_path)
+                    })?)
+                } else {
+                    Box::new(io::stdout())
+                };
             let mut progress = ProgressReader::new(&mut tsv_stream, display_name.to_string());
             eprintln!("[{display_name}] starting stream (format: tsv-raw)");
             let bytes = io::copy(&mut progress, &mut out)
@@ -152,8 +153,7 @@ pub fn read_entry(
                 let mut last_logged = 0u64;
                 for batch in rx.iter() {
                     total_rows += batch.num_rows() as u64;
-                    write_csv_batch(&mut writer, &batch)
-                        .context("failed to write csv batch")?;
+                    write_csv_batch(&mut writer, &batch).context("failed to write csv batch")?;
                     if total_rows - last_logged >= 1_000_000 {
                         eprintln!("[{display_name_owned}] {} rows written", total_rows);
                         last_logged = total_rows;
@@ -332,8 +332,7 @@ fn write_csv_batch<W: Write>(w: &mut W, batch: &RecordBatch) -> Result<()> {
 }
 
 fn write_csv_str<W: Write>(w: &mut W, s: &str) -> io::Result<()> {
-    let needs_quoting =
-        s.is_empty() || s.bytes().any(|b| matches!(b, b'"' | b',' | b'\n' | b'\r'));
+    let needs_quoting = s.is_empty() || s.bytes().any(|b| matches!(b, b'"' | b',' | b'\n' | b'\r'));
     if !needs_quoting {
         return w.write_all(s.as_bytes());
     }

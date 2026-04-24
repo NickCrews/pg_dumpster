@@ -13,10 +13,11 @@ fn limit_10_csv_matches_snapshot() -> Result<()> {
         "output.csv",
         Format::Csv,
     )?;
-    tc.snapshot("disclosure.fec_fitem_sched_a_1975_1976.csv").assert_matches(
-        &out,
-        TableComparator::new(Format::Csv).with_id_column("sub_id"),
-    )?;
+    tc.snapshot("disclosure.fec_fitem_sched_a_1975_1976.csv")
+        .assert_matches(
+            &out,
+            TableComparator::new(Format::Csv).with_id_column("sub_id"),
+        )?;
     Ok(())
 }
 
@@ -29,10 +30,11 @@ fn limit_10_parquet_matches_snapshot() -> Result<()> {
         "output.parquet",
         Format::Parquet,
     )?;
-    tc.snapshot("disclosure.fec_fitem_sched_a_1975_1976.csv").assert_matches(
-        &out,
-        TableComparator::new(Format::Parquet).with_id_column("sub_id"),
-    )?;
+    tc.snapshot("disclosure.fec_fitem_sched_a_1975_1976.csv")
+        .assert_matches(
+            &out,
+            TableComparator::new(Format::Parquet).with_id_column("sub_id"),
+        )?;
     Ok(())
 }
 
@@ -45,10 +47,11 @@ fn limit_10_tsv_raw_matches_snapshot() -> Result<()> {
         "output.tsv",
         Format::TsvRaw,
     )?;
-    tc.snapshot("disclosure.fec_fitem_sched_a_1975_1976.tsv").assert_matches(
-        &out,
-        TableComparator::new(Format::TsvRaw).with_id_column("sub_id"),
-    )?;
+    tc.snapshot("disclosure.fec_fitem_sched_a_1975_1976.tsv")
+        .assert_matches(
+            &out,
+            TableComparator::new(Format::TsvRaw).with_id_column("sub_id"),
+        )?;
     Ok(())
 }
 
@@ -74,7 +77,7 @@ fn escaping_parquet_matches_snapshot() -> Result<()> {
 fn escaping_tsv_raw_matches_snapshot() -> Result<()> {
     let tc = get_test_case_by_name("escaping");
     let out = run_read(&tc, "escaping.values", "escaping.tsv", Format::TsvRaw)?;
-    tc.snapshot( "escaping.values.tsv")
+    tc.snapshot("escaping.values.tsv")
         .assert_matches(&out, TableComparator::new(Format::TsvRaw))?;
     Ok(())
 }

@@ -305,7 +305,13 @@ fn read_tsv_raw(path: &Path) -> Result<Table> {
         }
         let row: Vec<Option<String>> = line
             .split('\t')
-            .map(|s| if s == "\\N" { None } else { Some(s.to_string()) })
+            .map(|s| {
+                if s == "\\N" {
+                    None
+                } else {
+                    Some(s.to_string())
+                }
+            })
             .collect();
         if row.len() != columns.len() {
             bail!(
@@ -540,12 +546,7 @@ fn fmt_opt(v: &Option<String>) -> String {
     }
 }
 
-fn write_table_snapshot(
-    path: &Path,
-    table: &Table,
-    id_column: &str,
-    format: Format,
-) -> Result<()> {
+fn write_table_snapshot(path: &Path, table: &Table, id_column: &str, format: Format) -> Result<()> {
     let id_idx = table.column_index(id_column).ok_or_else(|| {
         anyhow::anyhow!(
             "cannot write snapshot: id column '{}' not found in columns {:?}",
@@ -602,8 +603,7 @@ fn write_csv_line<'a, I: Iterator<Item = Option<&'a str>>>(
 }
 
 fn write_csv_field(out: &mut impl std::io::Write, s: &str) -> Result<()> {
-    let needs_quoting =
-        s.is_empty() || s.bytes().any(|b| matches!(b, b'"' | b',' | b'\n' | b'\r'));
+    let needs_quoting = s.is_empty() || s.bytes().any(|b| matches!(b, b'"' | b',' | b'\n' | b'\r'));
     if !needs_quoting {
         out.write_all(s.as_bytes())?;
         return Ok(());

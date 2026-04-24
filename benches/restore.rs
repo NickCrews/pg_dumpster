@@ -31,13 +31,20 @@ fn bench_case(c: &mut Criterion, case: TestCase, table_name: &str) {
 }
 
 fn bench_limit_10(c: &mut Criterion) {
-    bench_case(c, get_test_case_by_name("limit_10"), "disclosure.fec_fitem_sched_a_1975_1976");
+    bench_case(
+        c,
+        get_test_case_by_name("limit_10"),
+        "disclosure.fec_fitem_sched_a_1975_1976",
+    );
 }
 
 #[allow(non_snake_case)]
 fn bench_sched_b_full(c: &mut Criterion) {
-    bench_case(c, get_test_case_by_name("sched_b_full"), "disclosure.fec_fitem_sched_b_2021_2022");
-
+    bench_case(
+        c,
+        get_test_case_by_name("sched_b_full"),
+        "disclosure.fec_fitem_sched_b_2021_2022",
+    );
 }
 
 criterion_group!(benches, bench_limit_10, bench_sched_b_full);

@@ -16,7 +16,8 @@ fn write_toc_to_file(tc: &TestCase, out_name: &str) -> Result<std::path::PathBuf
 fn toc_basic_matches_snapshot() -> Result<()> {
     let tc = get_test_case_by_name("toc_basic");
     let out = write_toc_to_file(&tc, "toc.json")?;
-    tc.snapshot("toc.json").assert_matches(&out, JsonComparator)?;
+    tc.snapshot("toc.json")
+        .assert_matches(&out, JsonComparator)?;
     Ok(())
 }
 
@@ -24,6 +25,7 @@ fn toc_basic_matches_snapshot() -> Result<()> {
 fn escaping_toc_matches_snapshot() -> Result<()> {
     let tc = get_test_case_by_name("escaping");
     let out = write_toc_to_file(&tc, "toc.json")?;
-    tc.snapshot("toc.json").assert_matches(&out, JsonComparator)?;
+    tc.snapshot("toc.json")
+        .assert_matches(&out, JsonComparator)?;
     Ok(())
 }
