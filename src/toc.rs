@@ -1,57 +1,72 @@
 use anyhow::{Context, Result};
 use libpgdump::{Entry, TableOfContents};
+use serde_json;
 use std::io::Write;
 
 use crate::reader::open_reader;
 
 pub fn cmd_toc<W: Write>(dump_path: &str, out: &mut W) -> Result<()> {
     let loader = open_reader(dump_path).context("Failed to open dump and read TOC")?;
-    write!(out, "{}", toc_to_json(&loader.toc))?;
+    writeln!(out, "{}", toc_to_json(&loader.toc))?;
     Ok(())
 }
 
 pub fn toc_to_json(toc: &TableOfContents) -> String {
-    let mut json_entries = Vec::new();
-    for entry in &toc.entries {
-        json_entries.push(entry_to_json(entry));
-    }
-    format!(
-        "{{\n  \"compression\": \"{:?}\",\n  \"entries\": [\n{}\n  ]\n}}",
-        toc.compression,
-        json_entries.join(",\n")
-    )
+    let entries: Vec<_> = toc.entries.iter().map(entry_to_json).collect();
+
+    let doc = serde_json::json!({
+        "compression": format!("{:?}", toc.compression),
+        "entries": entries,
+    });
+
+    serde_json::to_string_pretty(&doc).unwrap()
 }
 
-fn entry_to_json(entry: &Entry) -> String {
-    format!(
-        "{{\n  \"dump_id\": {},\n  \"tag\": {},\n  \"desc\": \"{:?}\",\n  \"defn\": {},\n  \"copy_stmt\": {},\n  \"data_state\": \"{:?}\",\n  \"offset\": {},\n  \"had_dumper\": {}\n}}",
-        entry.dump_id,
-        entry
-            .tag
-            .as_ref()
-            .map(|s| format!("\"{}\"", json_escape(s)))
-            .unwrap_or_else(|| "null".to_string()),
-        entry.desc,
-        entry
-            .defn
-            .as_ref()
-            .map(|s| format!("\"{}\"", json_escape(s)))
-            .unwrap_or_else(|| "null".to_string()),
-        entry
-            .copy_stmt
-            .as_ref()
-            .map(|s| format!("\"{}\"", json_escape(s)))
-            .unwrap_or_else(|| "null".to_string()),
-        entry.data_state,
-        entry.offset,
-        entry.had_dumper,
-    )
-}
+// pub dump_id: i32,
+// pub had_dumper: bool,
+// pub table_oid: String,
+// pub oid: String,
+// pub tag: Option<String>,
+// pub desc: ObjectType,
+// pub section: Section,
+// pub defn: Option<String>,
+// pub drop_stmt: Option<String>,
+// pub copy_stmt: Option<String>,
+// pub namespace: Option<String>,
+// pub tablespace: Option<String>,
+// pub tableam: Option<String>,
+// pub relkind: Option<char>,
+// pub owner: Option<String>,
+// pub with_oids: bool,
+// pub dependencies: Vec<i32>,
+// /// Custom format: offset state (set, not set, no data).
+// pub data_state: OffsetState,
+// /// Custom format: byte offset of this entry's data in the archive file.
+// pub offset: u64,
+// /// Directory/tar format: relative filename for this entry's data file.
+// pub filename: Option<String>,
 
-fn json_escape(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
+pub fn entry_to_json(entry: &Entry) -> serde_json::Value {
+    serde_json::json!({
+        "dump_id": entry.dump_id,
+        "had_dumper": entry.had_dumper,
+        "table_oid": entry.table_oid,
+        "oid": entry.oid,
+        "tag": entry.tag,
+        "desc": format!("{:?}", entry.desc),
+        "section": format!("{:?}", entry.section),
+        "defn": entry.defn,
+        "drop_stmt": entry.drop_stmt,
+        "copy_stmt": entry.copy_stmt,
+        "namespace": entry.namespace,
+        "tablespace": entry.tablespace,
+        "tableam": entry.tableam,
+        "relkind": entry.relkind,
+        "owner": entry.owner,
+        "with_oids": entry.with_oids,
+        "dependencies": entry.dependencies,
+        "data_state": format!("{:?}", entry.data_state),
+        "offset": entry.offset,
+        "filename": entry.filename,
+    })
 }
