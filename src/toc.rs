@@ -22,30 +22,6 @@ pub fn toc_to_json(toc: &TableOfContents) -> String {
     serde_json::to_string_pretty(&doc).unwrap()
 }
 
-// pub dump_id: i32,
-// pub had_dumper: bool,
-// pub table_oid: String,
-// pub oid: String,
-// pub tag: Option<String>,
-// pub desc: ObjectType,
-// pub section: Section,
-// pub defn: Option<String>,
-// pub drop_stmt: Option<String>,
-// pub copy_stmt: Option<String>,
-// pub namespace: Option<String>,
-// pub tablespace: Option<String>,
-// pub tableam: Option<String>,
-// pub relkind: Option<char>,
-// pub owner: Option<String>,
-// pub with_oids: bool,
-// pub dependencies: Vec<i32>,
-// /// Custom format: offset state (set, not set, no data).
-// pub data_state: OffsetState,
-// /// Custom format: byte offset of this entry's data in the archive file.
-// pub offset: u64,
-// /// Directory/tar format: relative filename for this entry's data file.
-// pub filename: Option<String>,
-
 pub fn entry_to_json(entry: &Entry) -> serde_json::Value {
     serde_json::json!({
         "dump_id": entry.dump_id,
