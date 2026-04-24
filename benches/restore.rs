@@ -6,7 +6,7 @@ use pg_dumpster::{
     test_utils::case::{TestCase, get_test_case_by_name},
 };
 
-fn bench_case(c: &mut Criterion, case: TestCase) {
+fn bench_case(c: &mut Criterion, case: TestCase, table_name: &str) {
     let mut group = c.benchmark_group("restore");
 
     // This takes the max of these limits, so this ends up doing 10 samples, each 2.5sec, so ~30sec
@@ -16,7 +16,7 @@ fn bench_case(c: &mut Criterion, case: TestCase) {
 
     let out_path = case.working_dir().join("output.csv");
     let opts = table_read::ReadTableOptions {
-        table_name: "disclosure.fec_fitem_sched_a_1975_1976".to_string(),
+        table_name: table_name.to_string(),
         output: Some(out_path),
         format: Some(table_read::Format::Csv),
     };
@@ -31,13 +31,14 @@ fn bench_case(c: &mut Criterion, case: TestCase) {
 }
 
 fn bench_limit_10(c: &mut Criterion) {
-    bench_case(c, get_test_case_by_name("limit_10"));
+    bench_case(c, get_test_case_by_name("limit_10"), "disclosure.fec_fitem_sched_a_1975_1976");
 }
 
 #[allow(non_snake_case)]
-fn bench_limit_1M(c: &mut Criterion) {
-    bench_case(c, get_test_case_by_name("limit_1M"));
+fn bench_sched_b_full(c: &mut Criterion) {
+    bench_case(c, get_test_case_by_name("sched_b_full"), "disclosure.fec_fitem_sched_b_2021_2022");
+
 }
 
-criterion_group!(benches, bench_limit_10, bench_limit_1M);
+criterion_group!(benches, bench_limit_10, bench_sched_b_full);
 criterion_main!(benches);
