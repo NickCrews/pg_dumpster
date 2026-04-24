@@ -53,9 +53,11 @@ enum TableCommand {
         /// Where to write the output (defaults to stdout if not provided)
         #[arg(long)]
         output: Option<PathBuf>,
-        /// The format of the output.
-        #[arg(long, default_value = "tsv-raw")]
-        format: Format,
+        /// The format of the output. If omitted, inferred from the output
+        /// file extension (.parquet, .csv, .tsv), falling back to tsv-raw
+        /// when writing to stdout.
+        #[arg(long)]
+        format: Option<Format>,
     },
 }
 

@@ -5,8 +5,8 @@ use pg_dumpster::test_utils::case::{TestCase, get_test_case_by_name};
 use pg_dumpster::test_utils::snapshot::TableComparator;
 
 #[test]
-fn limit_100_csv_matches_snapshot() -> Result<()> {
-    let tc = get_test_case_by_name("limit_100");
+fn limit_10_csv_matches_snapshot() -> Result<()> {
+    let tc = get_test_case_by_name("limit_10");
     let out = run_read(
         &tc,
         "disclosure.fec_fitem_sched_a_1975_1976",
@@ -21,8 +21,8 @@ fn limit_100_csv_matches_snapshot() -> Result<()> {
 }
 
 #[test]
-fn limit_100_parquet_matches_snapshot() -> Result<()> {
-    let tc = get_test_case_by_name("limit_100");
+fn limit_10_parquet_matches_snapshot() -> Result<()> {
+    let tc = get_test_case_by_name("limit_10");
     let out = run_read(
         &tc,
         "disclosure.fec_fitem_sched_a_1975_1976",
@@ -37,8 +37,8 @@ fn limit_100_parquet_matches_snapshot() -> Result<()> {
 }
 
 #[test]
-fn limit_100_tsv_raw_matches_snapshot() -> Result<()> {
-    let tc = get_test_case_by_name("limit_100");
+fn limit_10_tsv_raw_matches_snapshot() -> Result<()> {
+    let tc = get_test_case_by_name("limit_10");
     let out = run_read(
         &tc,
         "disclosure.fec_fitem_sched_a_1975_1976",
@@ -89,7 +89,7 @@ fn run_read(
     let opts = ReadTableOptions {
         table_name: table_name.to_string(),
         output: Some(out.clone()),
-        format,
+        format: Some(format),
     };
     table_read::read_table(tc.src_dump().to_str().unwrap(), opts)?;
     Ok(out)

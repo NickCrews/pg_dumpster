@@ -19,8 +19,9 @@ pub struct ReadTableOptions {
     pub table_name: String,
     /// Where to write the output (defaults to stdout if not provided)
     pub output: Option<PathBuf>,
-    /// The format of the output.
-    pub format: Format,
+    /// The format of the output. If `None`, it is inferred from the output
+    /// file extension, falling back to `TsvRaw` when writing to stdout.
+    pub format: Option<Format>,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
@@ -38,9 +39,15 @@ pub enum Format {
     Csv,
 }
 
-impl Default for Format {
-    fn default() -> Self {
-        Format::Parquet
+/// Infer the output `Format` from a file extension. Returns `None` if the
+/// extension is missing or unrecognized.
+pub fn infer_format_from_path(path: &Path) -> Option<Format> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    match ext.as_str() {
+        "parquet" => Some(Format::Parquet),
+        "csv" => Some(Format::Csv),
+        "tsv" => Some(Format::TsvRaw),
+        _ => None,
     }
 }
 
@@ -51,6 +58,18 @@ pub fn read_table(dump_path: &str, opts: ReadTableOptions) -> Result<()> {
         format,
         ..
     } = opts;
+    let format = match format {
+        Some(f) => f,
+        None => match output.as_deref() {
+            Some(path) => infer_format_from_path(path).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "cannot infer output format from {:?}; pass --format explicitly",
+                    path
+                )
+            })?,
+            None => Format::TsvRaw,
+        },
+    };
     let mut loader = open_reader(dump_path).context("Failed to open dump and read TOC")?;
     let entry = find_table_entry(&loader.toc.entries, &table_name)?.clone();
     let mut tsv_stream = TsvStream::new(&mut loader, &entry)

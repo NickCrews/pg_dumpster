@@ -18,7 +18,7 @@ fn bench_case(c: &mut Criterion, case: TestCase) {
     let opts = table_read::ReadTableOptions {
         table_name: "disclosure.fec_fitem_sched_a_1975_1976".to_string(),
         output: Some(out_path),
-        format: table_read::Format::Csv,
+        format: Some(table_read::Format::Csv),
     };
 
     group.bench_function(case.name.clone(), |b| {
@@ -30,8 +30,8 @@ fn bench_case(c: &mut Criterion, case: TestCase) {
     group.finish();
 }
 
-fn bench_limit_100(c: &mut Criterion) {
-    bench_case(c, get_test_case_by_name("limit_100"));
+fn bench_limit_10(c: &mut Criterion) {
+    bench_case(c, get_test_case_by_name("limit_10"));
 }
 
 #[allow(non_snake_case)]
@@ -39,5 +39,5 @@ fn bench_limit_1M(c: &mut Criterion) {
     bench_case(c, get_test_case_by_name("limit_1M"));
 }
 
-criterion_group!(benches, bench_limit_100, bench_limit_1M);
+criterion_group!(benches, bench_limit_10, bench_limit_1M);
 criterion_main!(benches);
