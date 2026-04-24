@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use pg_dumpster::table_read::{self, Format, ReadTableOptions};
 use pg_dumpster::test_utils::case::{TestCase, get_test_case_by_name};
-use pg_dumpster::test_utils::snapshot::Snapshot;
+use pg_dumpster::test_utils::snapshot::TableComparator;
 
 #[test]
 fn limit_100_csv_matches_snapshot() -> Result<()> {
@@ -13,9 +13,10 @@ fn limit_100_csv_matches_snapshot() -> Result<()> {
         "output.csv",
         Format::Csv,
     )?;
-    Snapshot::new(&tc, "disclosure.fec_fitem_sched_a_1975_1976.csv")
-        .with_id_column("sub_id")
-        .assert_matches(&out, Format::Csv)?;
+    tc.snapshot("disclosure.fec_fitem_sched_a_1975_1976.csv").assert_matches(
+        &out,
+        TableComparator::new(Format::Csv).with_id_column("sub_id"),
+    )?;
     Ok(())
 }
 
@@ -28,9 +29,10 @@ fn limit_100_parquet_matches_snapshot() -> Result<()> {
         "output.parquet",
         Format::Parquet,
     )?;
-    Snapshot::new(&tc, "disclosure.fec_fitem_sched_a_1975_1976.csv")
-        .with_id_column("sub_id")
-        .assert_matches(&out, Format::Parquet)?;
+    tc.snapshot("disclosure.fec_fitem_sched_a_1975_1976.csv").assert_matches(
+        &out,
+        TableComparator::new(Format::Parquet).with_id_column("sub_id"),
+    )?;
     Ok(())
 }
 
@@ -43,9 +45,10 @@ fn limit_100_tsv_raw_matches_snapshot() -> Result<()> {
         "output.tsv",
         Format::TsvRaw,
     )?;
-    Snapshot::new(&tc, "disclosure.fec_fitem_sched_a_1975_1976.tsv")
-        .with_id_column("sub_id")
-        .assert_matches(&out, Format::TsvRaw)?;
+    tc.snapshot("disclosure.fec_fitem_sched_a_1975_1976.tsv").assert_matches(
+        &out,
+        TableComparator::new(Format::TsvRaw).with_id_column("sub_id"),
+    )?;
     Ok(())
 }
 
@@ -53,7 +56,8 @@ fn limit_100_tsv_raw_matches_snapshot() -> Result<()> {
 fn escaping_csv_matches_snapshot() -> Result<()> {
     let tc = get_test_case_by_name("escaping");
     let out = run_read(&tc, "escaping.values", "escaping.csv", Format::Csv)?;
-    Snapshot::new(&tc, "escaping.values.csv").assert_matches(&out, Format::Csv)?;
+    tc.snapshot("escaping.values.csv")
+        .assert_matches(&out, TableComparator::new(Format::Csv))?;
     Ok(())
 }
 
@@ -61,7 +65,8 @@ fn escaping_csv_matches_snapshot() -> Result<()> {
 fn escaping_parquet_matches_snapshot() -> Result<()> {
     let tc = get_test_case_by_name("escaping");
     let out = run_read(&tc, "escaping.values", "escaping.parquet", Format::Parquet)?;
-    Snapshot::new(&tc, "escaping.values.csv").assert_matches(&out, Format::Parquet)?;
+    tc.snapshot("escaping.values.csv")
+        .assert_matches(&out, TableComparator::new(Format::Parquet))?;
     Ok(())
 }
 
@@ -69,7 +74,8 @@ fn escaping_parquet_matches_snapshot() -> Result<()> {
 fn escaping_tsv_raw_matches_snapshot() -> Result<()> {
     let tc = get_test_case_by_name("escaping");
     let out = run_read(&tc, "escaping.values", "escaping.tsv", Format::TsvRaw)?;
-    Snapshot::new(&tc, "escaping.values.tsv").assert_matches(&out, Format::TsvRaw)?;
+    tc.snapshot( "escaping.values.tsv")
+        .assert_matches(&out, TableComparator::new(Format::TsvRaw))?;
     Ok(())
 }
 

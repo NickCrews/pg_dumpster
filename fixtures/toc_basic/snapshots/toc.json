@@ -1,0 +1,145 @@
+{
+  "compression": "Gzip",
+  "entries": [
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "SET client_encoding = 'UTF8';\n",
+      "desc": "Encoding",
+      "dump_id": 3438,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "ENCODING"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "SET standard_conforming_strings = 'on';\n",
+      "desc": "StdStrings",
+      "dump_id": 3439,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "STDSTRINGS"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "SELECT pg_catalog.set_config('search_path', '', false);\n",
+      "desc": "SearchPath",
+      "dump_id": 3440,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "SEARCHPATH"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "CREATE DATABASE fixture WITH TEMPLATE = template0 ENCODING = 'UTF8' LOCALE_PROVIDER = libc LOCALE = 'en_US.utf8';\n",
+      "desc": "Database",
+      "dump_id": 3441,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "fixture"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "CREATE SCHEMA ops;\n",
+      "desc": "Schema",
+      "dump_id": 7,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "ops"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "CREATE SCHEMA shop;\n",
+      "desc": "Schema",
+      "dump_id": 6,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "shop"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "CREATE TABLE ops.audit_log (\n    id integer NOT NULL,\n    action text NOT NULL\n);\n",
+      "desc": "Table",
+      "dump_id": 220,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "audit_log"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "CREATE TABLE shop.products (\n    id integer NOT NULL,\n    name text NOT NULL,\n    price numeric(10,2)\n);\n",
+      "desc": "Table",
+      "dump_id": 219,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "products"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "CREATE VIEW shop.cheap_products AS\n SELECT id,\n    name\n   FROM shop.products\n  WHERE (price < (10)::numeric);\n",
+      "desc": "View",
+      "dump_id": 221,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "cheap_products"
+    },
+    {
+      "copy_stmt": "COPY ops.audit_log (id, action) FROM stdin;\n",
+      "data_state": "Set",
+      "defn": null,
+      "desc": "TableData",
+      "dump_id": 3435,
+      "had_dumper": true,
+      "offset": 3288,
+      "tag": "audit_log"
+    },
+    {
+      "copy_stmt": "COPY shop.products (id, name, price) FROM stdin;\n",
+      "data_state": "Set",
+      "defn": null,
+      "desc": "TableData",
+      "dump_id": 3434,
+      "had_dumper": true,
+      "offset": 3331,
+      "tag": "products"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "ALTER TABLE ONLY ops.audit_log\n    ADD CONSTRAINT audit_log_pkey PRIMARY KEY (id);\n",
+      "desc": "Constraint",
+      "dump_id": 3287,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "audit_log audit_log_pkey"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "ALTER TABLE ONLY shop.products\n    ADD CONSTRAINT products_pkey PRIMARY KEY (id);\n",
+      "desc": "Constraint",
+      "dump_id": 3285,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "products products_pkey"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "CREATE INDEX products_name_idx ON shop.products USING btree (name);\n",
+      "desc": "Index",
+      "dump_id": 3283,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "products_name_idx"
+    }
+  ]
+}

@@ -5,6 +5,7 @@ pub mod profiling;
 pub mod reader;
 pub mod table_read;
 pub mod test_utils;
+pub mod toc;
 pub mod tsv;
 
 /// Time the enclosing scope from this point until the scope exits.

@@ -1,0 +1,85 @@
+{
+  "compression": "Gzip",
+  "entries": [
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "SET client_encoding = 'UTF8';\n",
+      "desc": "Encoding",
+      "dump_id": 3424,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "ENCODING"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "SET standard_conforming_strings = 'on';\n",
+      "desc": "StdStrings",
+      "dump_id": 3425,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "STDSTRINGS"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "SELECT pg_catalog.set_config('search_path', '', false);\n",
+      "desc": "SearchPath",
+      "dump_id": 3426,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "SEARCHPATH"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "CREATE DATABASE fixture WITH TEMPLATE = template0 ENCODING = 'UTF8' LOCALE_PROVIDER = libc LOCALE = 'en_US.utf8';\n",
+      "desc": "Database",
+      "dump_id": 3427,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "fixture"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "CREATE SCHEMA escaping;\n",
+      "desc": "Schema",
+      "dump_id": 6,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "escaping"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "CREATE TABLE escaping.\"values\" (\n    id text NOT NULL,\n    payload text\n);\n",
+      "desc": "Table",
+      "dump_id": 218,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "values"
+    },
+    {
+      "copy_stmt": "COPY escaping.\"values\" (id, payload) FROM stdin;\n",
+      "data_state": "Set",
+      "defn": null,
+      "desc": "TableData",
+      "dump_id": 3421,
+      "had_dumper": true,
+      "offset": 1813,
+      "tag": "values"
+    },
+    {
+      "copy_stmt": null,
+      "data_state": "NoData",
+      "defn": "ALTER TABLE ONLY escaping.\"values\"\n    ADD CONSTRAINT values_pkey PRIMARY KEY (id);\n",
+      "desc": "Constraint",
+      "dump_id": 3275,
+      "had_dumper": false,
+      "offset": 0,
+      "tag": "values values_pkey"
+    }
+  ]
+}

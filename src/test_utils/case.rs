@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use crate::test_utils::snapshot::Snapshot;
 
 pub fn find_test_cases() -> Vec<TestCase> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -139,6 +140,12 @@ impl TestCase {
         let working_dir = self.dir.join("working");
         fs::create_dir_all(&working_dir).unwrap();
         working_dir
+    }
+
+    /// eg `case.snapshot("disclosure.fec_fitem_sched_a_1975_1976.tsv")` resolves to
+    /// `fixtures/<this case>/snapshots/disclosure.fec_fitem_sched_a_1975_1976.tsv`
+    pub fn snapshot(&self, path_name: &str) -> Snapshot {
+        Snapshot::new(self, path_name)
     }
 }
 
