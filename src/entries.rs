@@ -1,7 +1,40 @@
-use crate::tsv::parse_copy_statement;
 use anyhow::{Result, bail};
 use libpgdump::Entry;
 use libpgdump::OffsetState;
+use regex::Regex;
+
+pub fn parse_copy_statement(statement: &str) -> Result<Option<(String, Vec<String>)>> {
+    let re = Regex::new(r"(?i)^COPY\s+(.+?)\s*\((.+)\)\s+FROM\s+stdin;?\s*$")?;
+    let Some(captures) = re.captures(statement.trim()) else {
+        return Ok(None);
+    };
+    let table_raw = captures.get(1).map(|m| m.as_str()).unwrap_or_default();
+    let table_name = normalize_qualified_name(table_raw);
+    let column_names = captures
+        .get(2)
+        .map(|m| m.as_str())
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().trim_matches('"').to_owned())
+        .collect();
+    Ok(Some((table_name, column_names)))
+}
+
+fn normalize_qualified_name(value: &str) -> String {
+    let parts = value
+        .split('.')
+        .map(|part| quote_identifier(part.trim()))
+        .collect::<Vec<_>>();
+    parts.join(".")
+}
+
+fn quote_identifier(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
+        return trimmed.to_owned();
+    }
+    format!("\"{}\"", trimmed.replace('"', "\"\""))
+}
 
 pub fn find_table_entry<'a>(entries: &'a [Entry], table_name: &str) -> Result<&'a Entry> {
     let normalized_target = normalize_table_name(table_name);

@@ -1,7 +1,7 @@
 use crate::arrow_tsv::{DEFAULT_BATCH_SIZE, TsvBatchReader};
-use crate::entries::find_table_entry;
+use crate::entries::{find_table_entry, parse_copy_statement};
 use crate::reader::{DumpReader, open_reader};
-use crate::tsv::{TsvStream, parse_copy_statement};
+use crate::tsv::TsvStream;
 use anyhow::{Context, Result};
 use arrow::array::{Array, StringArray};
 use arrow::record_batch::RecordBatch;

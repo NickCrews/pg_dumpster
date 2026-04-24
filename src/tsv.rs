@@ -1,42 +1,9 @@
 use anyhow::{Context, Result};
 use libpgdump::CustomDataLoader;
 use libpgdump::format::custom::TableDataReader;
-use regex::Regex;
 
+use crate::entries::parse_copy_statement;
 use crate::reader::DumpReader;
-
-pub fn parse_copy_statement(statement: &str) -> Result<Option<(String, Vec<String>)>> {
-    let re = Regex::new(r"(?i)^COPY\s+(.+?)\s*\((.+)\)\s+FROM\s+stdin;?\s*$")?;
-    let Some(captures) = re.captures(statement.trim()) else {
-        return Ok(None);
-    };
-    let table_raw = captures.get(1).map(|m| m.as_str()).unwrap_or_default();
-    let table_name = normalize_qualified_name(table_raw);
-    let column_names = captures
-        .get(2)
-        .map(|m| m.as_str())
-        .unwrap_or_default()
-        .split(',')
-        .map(|s| s.trim().trim_matches('"').to_owned())
-        .collect();
-    Ok(Some((table_name, column_names)))
-}
-
-fn normalize_qualified_name(value: &str) -> String {
-    let parts = value
-        .split('.')
-        .map(|part| quote_identifier(part.trim()))
-        .collect::<Vec<_>>();
-    parts.join(".")
-}
-
-fn quote_identifier(value: &str) -> String {
-    let trimmed = value.trim();
-    if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
-        return trimmed.to_owned();
-    }
-    format!("\"{}\"", trimmed.replace('"', "\"\""))
-}
 
 /// Wraps the raw stream of data in the dump file into a new stream that is a valid TSV file.
 /// The raw stream does not have a header row, and ends with a line containing just "\." instead of EOF.
