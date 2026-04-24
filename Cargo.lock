@@ -1589,8 +1589,6 @@ dependencies = [
  "clap",
  "criterion",
  "crossbeam-channel",
- "csv",
- "flate2",
  "glob",
  "libpgdump",
  "parquet",
