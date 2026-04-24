@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use arrow::array::{Array, StringArray};
 use arrow::record_batch::RecordBatch;
 use clap::ValueEnum;
+use libpgdump::{CustomDataLoader, Entry};
 use parquet::arrow::ArrowWriter;
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
@@ -72,27 +73,38 @@ pub fn read_table(dump_path: &str, opts: ReadTableOptions) -> Result<()> {
     };
     let mut loader = open_reader(dump_path).context("Failed to open dump and read TOC")?;
     let entry = find_table_entry(&loader.toc.entries, &table_name)?.clone();
-    let mut tsv_stream = TsvStream::new(&mut loader, &entry)
-        .with_context(|| format!("failed to create TSV stream for {table_name}"))?;
+    read_entry(&mut loader, &entry, &table_name, output, format)
+}
+
+/// Extract a single entry's data using an already-opened loader.
+///
+/// `display_name` is used only for log messages. `output` is required for
+/// `Csv` and `Parquet`; `TsvRaw` falls back to stdout when `output` is `None`.
+pub fn read_entry(
+    loader: &mut CustomDataLoader<DumpReader>,
+    entry: &Entry,
+    display_name: &str,
+    output: Option<PathBuf>,
+    format: Format,
+) -> Result<()> {
+    let mut tsv_stream = TsvStream::new(loader, entry)
+        .with_context(|| format!("failed to create TSV stream for {display_name}"))?;
 
     match format {
         Format::TsvRaw => {
-            let mut out: Box<dyn io::Write> =
-                if let Some(output_path) = output {
-                    Box::new(fs::File::create(&output_path).with_context(|| {
-                        format!("failed to create output file {:?}", output_path)
-                    })?)
-                } else {
-                    Box::new(io::stdout())
-                };
-            let mut progress: ProgressReader<
-                &mut TsvStream<libpgdump::format::custom::TableDataReader<'_, DumpReader>>,
-            > = ProgressReader::new(&mut tsv_stream, table_name.to_string());
-            eprintln!("[{table_name}] starting stream (format: tsv-raw)");
-            let rows = io::copy(&mut progress, &mut out)
-                .with_context(|| format!("failed to stream data for {table_name}"))?;
-            eprintln!("[{table_name}] done ({} bytes written)", rows);
-            return Ok(());
+            let mut out: Box<dyn io::Write> = if let Some(output_path) = output {
+                Box::new(fs::File::create(&output_path).with_context(|| {
+                    format!("failed to create output file {:?}", output_path)
+                })?)
+            } else {
+                Box::new(io::stdout())
+            };
+            let mut progress = ProgressReader::new(&mut tsv_stream, display_name.to_string());
+            eprintln!("[{display_name}] starting stream (format: tsv-raw)");
+            let bytes = io::copy(&mut progress, &mut out)
+                .with_context(|| format!("failed to stream data for {display_name}"))?;
+            eprintln!("[{display_name}] done ({} bytes written)", bytes);
+            Ok(())
         }
         Format::Csv => {
             let output_path =
@@ -112,7 +124,7 @@ pub fn read_table(dump_path: &str, opts: ReadTableOptions) -> Result<()> {
                 .map(|(_, cols)| cols)
                 .ok_or_else(|| anyhow::anyhow!("no column names parsed from COPY statement"))?;
             eprintln!(
-                "[{table_name}] starting arrow csv write ({} cols, output: {:?})",
+                "[{display_name}] starting arrow csv write ({} cols, output: {:?})",
                 column_names.len(),
                 output_path
             );
@@ -131,7 +143,7 @@ pub fn read_table(dump_path: &str, opts: ReadTableOptions) -> Result<()> {
                 TsvBatchReader::new(buf_reader, &column_names, DEFAULT_BATCH_SIZE);
 
             let (tx, rx) = crossbeam_channel::bounded::<arrow::record_batch::RecordBatch>(4);
-            let table_name_owned = table_name.to_string();
+            let display_name_owned = display_name.to_string();
             let column_names_owned = column_names.clone();
             let writer_handle = std::thread::spawn(move || -> Result<u64> {
                 let mut writer = buf_file;
@@ -143,7 +155,7 @@ pub fn read_table(dump_path: &str, opts: ReadTableOptions) -> Result<()> {
                     write_csv_batch(&mut writer, &batch)
                         .context("failed to write csv batch")?;
                     if total_rows - last_logged >= 1_000_000 {
-                        eprintln!("[{table_name_owned}] {} rows written", total_rows);
+                        eprintln!("[{display_name_owned}] {} rows written", total_rows);
                         last_logged = total_rows;
                     }
                 }
@@ -162,8 +174,8 @@ pub fn read_table(dump_path: &str, opts: ReadTableOptions) -> Result<()> {
                 .join()
                 .map_err(|_| anyhow::anyhow!("writer thread panicked"))??;
 
-            eprintln!("[{table_name}] done ({} rows)", total_rows);
-            return Ok(());
+            eprintln!("[{display_name}] done ({} rows)", total_rows);
+            Ok(())
         }
         Format::Parquet => {
             let output_path =
@@ -183,7 +195,7 @@ pub fn read_table(dump_path: &str, opts: ReadTableOptions) -> Result<()> {
                 .map(|(_, cols)| cols)
                 .ok_or_else(|| anyhow::anyhow!("no column names parsed from COPY statement"))?;
             eprintln!(
-                "[{table_name}] starting arrow parquet write ({} cols, output: {:?})",
+                "[{display_name}] starting arrow parquet write ({} cols, output: {:?})",
                 column_names.len(),
                 output_path
             );
@@ -208,7 +220,7 @@ pub fn read_table(dump_path: &str, opts: ReadTableOptions) -> Result<()> {
                 .context("failed to create parquet writer")?;
 
             let (tx, rx) = crossbeam_channel::bounded::<arrow::record_batch::RecordBatch>(4);
-            let table_name_owned = table_name.to_string();
+            let display_name_owned = display_name.to_string();
             let writer_handle = std::thread::spawn(move || -> Result<u64> {
                 let mut writer = writer;
                 let mut total_rows = 0u64;
@@ -219,7 +231,7 @@ pub fn read_table(dump_path: &str, opts: ReadTableOptions) -> Result<()> {
                         .write(&batch)
                         .context("failed to write parquet batch")?;
                     if total_rows - last_logged >= 1_000_000 {
-                        eprintln!("[{table_name_owned}] {} rows written", total_rows);
+                        eprintln!("[{display_name_owned}] {} rows written", total_rows);
                         last_logged = total_rows;
                     }
                 }
@@ -238,8 +250,8 @@ pub fn read_table(dump_path: &str, opts: ReadTableOptions) -> Result<()> {
                 .join()
                 .map_err(|_| anyhow::anyhow!("writer thread panicked"))??;
 
-            eprintln!("[{table_name}] done ({} rows)", total_rows);
-            return Ok(());
+            eprintln!("[{display_name}] done ({} rows)", total_rows);
+            Ok(())
         }
     }
 }

@@ -4,9 +4,9 @@ use libpgdump::Entry;
 use libpgdump::OffsetState;
 use pg_dumpster::entries::filter_entries_to_table_datas;
 use pg_dumpster::reader::open_reader;
-use pg_dumpster::table_read::{Format, ReadTableOptions, read_table};
+use pg_dumpster::table_read::{Format, ReadTableOptions, read_entry, read_table};
 use pg_dumpster::toc::{cmd_toc, toc_to_json};
-use pg_dumpster::tsv::{TsvStream, parse_copy_statement};
+use pg_dumpster::tsv::parse_copy_statement;
 use std::fs::{self};
 use std::io::{self};
 use std::path::PathBuf;
@@ -106,20 +106,17 @@ fn cmd_all(dump_path: &str, output_dir: &PathBuf) -> Result<()> {
     for entry in &data_entries {
         let file_name = format!("data_{}.tsv", entry.dump_id);
         let file_path = output_dir.join(&file_name);
-
-        eprintln!(
-            "Extracting entry {} ({:?}) to {}",
-            entry.dump_id, entry.desc, file_name
-        );
-
-        let mut tsv_stream = TsvStream::new(&mut loader, entry).with_context(|| {
-            format!("failed to create TSV stream for dump_id {}", entry.dump_id)
-        })?;
-
-        let mut out_file = fs::File::create(&file_path)
-            .with_context(|| format!("failed to create output file {:?}", file_path))?;
-        io::copy(&mut tsv_stream, &mut out_file)
-            .with_context(|| format!("failed to copy data for dump_id {}", entry.dump_id))?;
+        let display_name = match entry.tag.as_deref() {
+            Some(tag) => format!("dump_id={} {}", entry.dump_id, tag),
+            None => format!("dump_id={}", entry.dump_id),
+        };
+        read_entry(
+            &mut loader,
+            entry,
+            &display_name,
+            Some(file_path),
+            Format::TsvRaw,
+        )?;
     }
 
     let toc_path = output_dir.join("toc.json");
