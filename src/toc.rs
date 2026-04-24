@@ -15,7 +15,29 @@ pub fn toc_to_json(toc: &TableOfContents) -> String {
     let entries: Vec<_> = toc.entries.iter().map(entry_to_json).collect();
 
     let doc = serde_json::json!({
+        "version_string": toc.version.to_string(),
+        "version": {
+            "major": toc.version.major,
+            "minor": toc.version.minor,
+            "rev": toc.version.rev,
+        },
+        "int_size": toc.int_size,
+        "off_size": toc.off_size,
+        "format": format!("{:?}", toc.format),
         "compression": format!("{:?}", toc.compression),
+        "timestamp": {
+            "sec": toc.timestamp.second,
+            "min": toc.timestamp.minute,
+            "hour": toc.timestamp.hour,
+            "mday": toc.timestamp.day,
+            "mon": toc.timestamp.month,
+            "year": toc.timestamp.year,
+            "isdst": toc.timestamp.is_dst,
+        },
+        "timestamp_iso": timestamp_to_iso(&toc.timestamp),
+        "dbname": toc.dbname,
+        "server_version": toc.server_version,
+        "dump_version": toc.dump_version,
         "entries": entries,
     });
 
@@ -45,4 +67,48 @@ pub fn entry_to_json(entry: &Entry) -> serde_json::Value {
         "offset": entry.offset,
         "filename": entry.filename,
     })
+}
+
+fn timestamp_to_iso(ts: &libpgdump::Timestamp) -> String {
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}{}",
+        ts.year + 1900,
+        ts.month,
+        ts.day,
+        ts.hour,
+        ts.minute,
+        ts.second,
+        if ts.is_dst > 0 { " DST" } else { "" }
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use libpgdump::Timestamp;
+
+    #[test]
+    fn test_timestamp_to_iso() {
+        let ts = Timestamp {
+            second: 15,
+            minute: 30,
+            hour: 14,
+            day: 25,
+            month: 12,
+            year: 123,
+            is_dst: 0,
+        };
+        assert_eq!(timestamp_to_iso(&ts), "2023-12-25T14:30:15");
+
+        let ts_dst = Timestamp {
+            second: 0,
+            minute: 0,
+            hour: 10,
+            day: 1,
+            month: 7,
+            year: 123,
+            is_dst: 1,
+        };
+        assert_eq!(timestamp_to_iso(&ts_dst), "2023-07-01T10:00:00 DST");
+    }
 }

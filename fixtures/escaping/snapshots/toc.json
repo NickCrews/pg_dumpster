@@ -1,5 +1,7 @@
 {
   "compression": "Gzip",
+  "dbname": "fixture",
+  "dump_version": "17.9 (Debian 17.9-1.pgdg13+1)",
   "entries": [
     {
       "copy_stmt": null,
@@ -183,5 +185,25 @@
       "tag": "values values_pkey",
       "with_oids": false
     }
-  ]
+  ],
+  "format": "Custom",
+  "int_size": 4,
+  "off_size": 8,
+  "server_version": "17.9 (Debian 17.9-1.pgdg13+1)",
+  "timestamp": {
+    "hour": 18,
+    "isdst": 0,
+    "mday": 24,
+    "min": 44,
+    "mon": 3,
+    "sec": 13,
+    "year": 126
+  },
+  "timestamp_iso": "2026-03-24T18:44:13",
+  "version": {
+    "major": 1,
+    "minor": 16,
+    "rev": 0
+  },
+  "version_string": "1.16.0"
 }
