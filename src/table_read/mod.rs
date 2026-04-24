@@ -1,5 +1,5 @@
 use crate::arrow_tsv::{DEFAULT_BATCH_SIZE, TsvBatchReader};
-use crate::entries::{find_table_entry, parse_copy_statement};
+use crate::entries::{self, find_table_entry, parse_copy_statement};
 use crate::reader::{DumpReader, open_reader};
 use crate::tsv::TsvStream;
 use anyhow::{Context, Result};
@@ -73,7 +73,7 @@ pub fn read_table(dump_path: &str, opts: ReadTableOptions) -> Result<()> {
     };
     let mut loader = open_reader(dump_path).context("Failed to open dump and read TOC")?;
     let entry = find_table_entry(&loader.toc.entries, &table_name)?.clone();
-    read_entry(&mut loader, &entry, &table_name, output, format)
+    read_entry(&mut loader, &entry, output, format)
 }
 
 /// Extract a single entry's data using an already-opened loader.
@@ -83,10 +83,11 @@ pub fn read_table(dump_path: &str, opts: ReadTableOptions) -> Result<()> {
 pub fn read_entry(
     loader: &mut CustomDataLoader<DumpReader>,
     entry: &Entry,
-    display_name: &str,
     output: Option<PathBuf>,
     format: Format,
 ) -> Result<()> {
+    let display_name =
+        entries::qualified_name(entry).unwrap_or_else(|| format!("dump_id={}", entry.dump_id));
     let mut tsv_stream = TsvStream::new(loader, entry)
         .with_context(|| format!("failed to create TSV stream for {display_name}"))?;
 

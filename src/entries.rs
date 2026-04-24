@@ -36,6 +36,21 @@ fn quote_identifier(value: &str) -> String {
     format!("\"{}\"", trimmed.replace('"', "\"\""))
 }
 
+/// Combines as either `"namespace"."tag"` or just `"tag"` if no namespace.
+pub fn qualified_name(entry: &Entry) -> Option<String> {
+    entry.tag.as_ref().map(|tag| {
+        if let Some(namespace) = &entry.namespace {
+            format!(
+                "\"{}\".\"{}\"",
+                namespace.replace('"', "\"\""),
+                tag.replace('"', "\"\"")
+            )
+        } else {
+            format!("\"{}\"", tag.replace('"', "\"\""))
+        }
+    })
+}
+
 pub fn find_table_entry<'a>(entries: &'a [Entry], table_name: &str) -> Result<&'a Entry> {
     let normalized_target = normalize_table_name(table_name);
 
@@ -93,4 +108,62 @@ fn normalize_table_name(name: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(".")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use libpgdump::{Entry, ObjectType, OffsetState, Section};
+
+    fn mock_entry() -> Entry {
+        Entry {
+            dump_id: 0,
+            had_dumper: false,
+            table_oid: "".to_string(),
+            oid: "".to_string(),
+            tag: None,
+            desc: ObjectType::Table,
+            section: Section::None,
+            defn: None,
+            drop_stmt: None,
+            copy_stmt: None,
+            namespace: None,
+            tablespace: None,
+            tableam: None,
+            relkind: None,
+            owner: None,
+            with_oids: false,
+            dependencies: vec![],
+            data_state: OffsetState::NotSet,
+            offset: 0,
+            filename: None,
+        }
+    }
+
+    #[test]
+    fn test_qualified_name() {
+        let mut entry = mock_entry();
+        assert_eq!(qualified_name(&entry), None);
+
+        // Tag, no namespace
+        entry.tag = Some("my_table".to_string());
+        entry.namespace = None;
+        assert_eq!(qualified_name(&entry).as_deref(), Some("\"my_table\""));
+
+        // Tag and namespace
+        entry.tag = Some("my_table".to_string());
+        entry.namespace = Some("public".to_string());
+        assert_eq!(
+            qualified_name(&entry).as_deref(),
+            Some("\"public\".\"my_table\"")
+        );
+
+        // Quotes inside tag and namespace
+        entry.tag = Some("my_\"table\"".to_string());
+        entry.namespace = Some("pub\"lic\"".to_string());
+        assert_eq!(
+            qualified_name(&entry).as_deref(),
+            Some("\"pub\"\"lic\"\"\".\"my_\"\"table\"\"\"")
+        );
+    }
 }
