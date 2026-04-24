@@ -3,12 +3,14 @@ use crate::entries::find_table_entry;
 use crate::reader::{DumpReader, open_reader};
 use crate::tsv::{TsvStream, parse_copy_statement};
 use anyhow::{Context, Result};
+use arrow::array::{Array, StringArray};
+use arrow::record_batch::RecordBatch;
 use clap::ValueEnum;
 use parquet::arrow::ArrowWriter;
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
 use std::fs::{self, create_dir_all};
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -111,20 +113,22 @@ pub fn read_table(dump_path: &str, opts: ReadTableOptions) -> Result<()> {
 
             let (tx, rx) = crossbeam_channel::bounded::<arrow::record_batch::RecordBatch>(4);
             let table_name_owned = table_name.to_string();
+            let column_names_owned = column_names.clone();
             let writer_handle = std::thread::spawn(move || -> Result<u64> {
-                let mut writer = arrow::csv::WriterBuilder::new()
-                    .with_header(true)
-                    .build(buf_file);
+                let mut writer = buf_file;
+                write_csv_header(&mut writer, &column_names_owned)?;
                 let mut total_rows = 0u64;
                 let mut last_logged = 0u64;
                 for batch in rx.iter() {
                     total_rows += batch.num_rows() as u64;
-                    writer.write(&batch).context("failed to write csv batch")?;
+                    write_csv_batch(&mut writer, &batch)
+                        .context("failed to write csv batch")?;
                     if total_rows - last_logged >= 1_000_000 {
                         eprintln!("[{table_name_owned}] {} rows written", total_rows);
                         last_logged = total_rows;
                     }
                 }
+                writer.flush().context("failed to flush csv writer")?;
                 Ok(total_rows)
             });
 
@@ -254,4 +258,65 @@ impl<R: io::Read> io::Read for ProgressReader<R> {
         }
         Ok(n)
     }
+}
+
+/// Write a CSV line for the header. All column names are written as regular
+/// fields (quoted only if necessary).
+fn write_csv_header<W: Write>(w: &mut W, columns: &[String]) -> Result<()> {
+    for (i, name) in columns.iter().enumerate() {
+        if i > 0 {
+            w.write_all(b",")?;
+        }
+        write_csv_str(w, name)?;
+    }
+    w.write_all(b"\n")?;
+    Ok(())
+}
+
+/// Write a RecordBatch of Utf8 columns as CSV. SQL NULLs are written as bare
+/// empty fields; literal empty strings are written as `""`. This is the
+/// critical distinction that lets tools like DuckDB reconstruct the data.
+fn write_csv_batch<W: Write>(w: &mut W, batch: &RecordBatch) -> Result<()> {
+    let cols: Vec<&StringArray> = (0..batch.num_columns())
+        .map(|i| {
+            batch
+                .column(i)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or_else(|| anyhow::anyhow!("csv writer expects Utf8 columns"))
+        })
+        .collect::<Result<_>>()?;
+    for r in 0..batch.num_rows() {
+        for (c, col) in cols.iter().enumerate() {
+            if c > 0 {
+                w.write_all(b",")?;
+            }
+            if !col.is_null(r) {
+                write_csv_str(w, col.value(r))?;
+            }
+        }
+        w.write_all(b"\n")?;
+    }
+    Ok(())
+}
+
+fn write_csv_str<W: Write>(w: &mut W, s: &str) -> io::Result<()> {
+    let needs_quoting =
+        s.is_empty() || s.bytes().any(|b| matches!(b, b'"' | b',' | b'\n' | b'\r'));
+    if !needs_quoting {
+        return w.write_all(s.as_bytes());
+    }
+    w.write_all(b"\"")?;
+    let bytes = s.as_bytes();
+    let mut last = 0;
+    for (i, b) in bytes.iter().enumerate() {
+        if *b == b'"' {
+            w.write_all(&bytes[last..=i])?;
+            w.write_all(b"\"")?;
+            last = i + 1;
+        }
+    }
+    w.write_all(&bytes[last..])?;
+    w.write_all(b"\"")?;
+    Ok(())
 }
