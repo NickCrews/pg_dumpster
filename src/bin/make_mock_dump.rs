@@ -324,7 +324,6 @@ fn table_name_from_copy_stmt(copy_stmt: Option<&str>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::path::PathBuf;
 
     use glob::Pattern;
     use tempfile::NamedTempFile;
@@ -402,10 +401,7 @@ mod tests {
 
     #[test]
     fn can_generate_shorter_dump_from_14mb_fixture() {
-        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("fixtures")
-            .join("limit_100")
-            .join("src.dump");
+        let fixture = pg_dumpster::test_utils::case::get_test_case_by_name("limit_10").src_dump();
         let output = NamedTempFile::new().expect("temp output should be created");
 
         run(Cli {
@@ -414,7 +410,7 @@ mod tests {
                 .expect("fixture path should be valid UTF-8")
                 .to_string(),
             output_dump: output.path().to_path_buf(),
-            row_limit: Some(50),
+            row_limit: Some(5),
             row_sample: None,
             table_pattern: None,
         })
