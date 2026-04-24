@@ -25,6 +25,9 @@ enum Command {
         dump_path: String,
         /// Output directory
         output_dir: PathBuf,
+        /// The format of the output. If omitted, defaults to tsv-raw.
+        #[arg(long)]
+        format: Option<Format>,
     },
     /// Print the table of contents as JSON to stdout
     Toc {
@@ -67,7 +70,8 @@ fn main() -> Result<()> {
         Command::All {
             dump_path,
             output_dir,
-        } => cmd_all(&dump_path, &output_dir),
+            format,
+        } => cmd_all(&dump_path, &output_dir, format),
         Command::Toc { dump_path } => cmd_toc(&dump_path, &mut io::stdout()),
         Command::Table(TableCommand::Ls { dump_path }) => cmd_table_ls(&dump_path),
         Command::Table(TableCommand::Read {
@@ -86,7 +90,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn cmd_all(dump_path: &str, output_dir: &PathBuf) -> Result<()> {
+fn cmd_all(dump_path: &str, output_dir: &PathBuf, format: Option<Format>) -> Result<()> {
     if !output_dir.exists() {
         fs::create_dir_all(output_dir).context("Failed to create output directory")?;
     }
@@ -101,11 +105,17 @@ fn cmd_all(dump_path: &str, output_dir: &PathBuf) -> Result<()> {
         .cloned()
         .collect();
     let toc_json = toc_to_json(&loader.toc);
+    let format = format.unwrap_or(Format::TsvRaw);
 
     for entry in &data_entries {
-        let file_name = format!("data_{}.tsv", entry.dump_id);
+        let extension = match format {
+            Format::Csv => "csv",
+            Format::TsvRaw => "tsv",
+            Format::Parquet => "parquet",
+        };
+        let file_name = format!("data_{}.{}", entry.dump_id, extension);
         let file_path = output_dir.join(&file_name);
-        read_entry(&mut loader, entry, Some(file_path), Format::TsvRaw)?;
+        read_entry(&mut loader, entry, Some(file_path), format)?;
     }
 
     let toc_path = output_dir.join("toc.json");
